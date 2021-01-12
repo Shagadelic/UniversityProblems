@@ -1,2 +1,2 @@
 # UniversityProblems
-Some selected tasks from university assignments
+Some selected tasks from university assignments.
