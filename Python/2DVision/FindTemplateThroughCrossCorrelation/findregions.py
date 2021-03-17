@@ -1,12 +1,6 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""
-Spyder Editor
-Author: Shagadelic
-Date: Jan 27.1.2021
-Groove: 3/10
-Weather: still kinda cold
-"""
+
 import cv2
 import numpy as np
 from copy import deepcopy
