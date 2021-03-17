@@ -1,11 +1,5 @@
 # -*- coding: utf-8 -*-
-"""
-Spyder Editor
-Author: Shagadelic
-Date: Dec 22. 20
-Groove: 7/10
-Weather: kinda cold
-"""
+
 import cv2
 import numpy as np
 from copy import deepcopy
