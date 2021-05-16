@@ -1,0 +1,265 @@
+---
+title: "R Notebook"
+output: html_notebook
+editor_options: 
+  chunk_output_type: console
+  #chunk_output_type: inline
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r}
+#set Repositories, mirrors
+#setRepositories()
+#chooseCRANmirror(graphics = TRUE)
+#chooseBioCmirror(graphics = TRUE)
+
+#install.packages(pkgs = c("limma", "openxlsx", "affy", "gplots", "pROC"), dependencies = TRUE)
+
+library("limma", verbose = TRUE)
+?package="limma"
+library("affy", verbose = TRUE)
+?"affy"
+library("openxlsx", verbose = TRUE)
+?"openxlsx"
+library("gplots", verbose = TRUE)
+?"gplots"
+library("pROC", verbose = TRUE)
+?"pROC"
+```
+```{r}
+getwd()
+wd <- "./data"
+setwd(wd)
+getwd()
+
+#loads data
+hcc_19vs19_raw_abundances <- read.xlsx("HCC_19vs19_raw_abundances.xlsx")
+hcc_19vs19_raw_abundances
+#protein info dataframe
+hcc_19vs19_info <- hcc_19vs19_raw_abundances[, 1:9]
+#hcc_19vs19_info
+#data dataframe
+hcc_19vs19_raw_abundances <- hcc_19vs19_raw_abundances[, 10:ncol(hcc_19vs19_raw_abundances)]
+
+#changes all 0es to NA
+hcc_19vs19_raw_abundances[hcc_19vs19_raw_abundances==0] <- NA
+#number of missing values
+sum(is.na(hcc_19vs19_raw_abundances))
+#missing value numbers for proteins
+row_na_count <- rowSums(is.na(hcc_19vs19_raw_abundances))
+#number of rows with no NA encountered
+no_missing_values <- sum(row_na_count==0)
+proteins_per_count <- table(row_na_count)
+barplot(proteins_per_count, main = "Proteins with a certain number of missing values", xlab = "NA count", ylab = "Protein count", las = 2)
+#missing value numbers for samples
+col_na_count <- colSums(is.na(hcc_19vs19_raw_abundances))
+col_na_count
+#different color for the max value
+cols <- c("orange", "grey")[(col_na_count!=max(col_na_count))+1]
+barplot(col_na_count, main = "No. of missing values from samples", xlab = "Sample", ylab = "Missing NA", las = 2, col = cols, cex.names = 0.8)
+
+#normalizations
+library("limma")
+norm_data <- log2(hcc_19vs19_raw_abundances)
+
+median_norm <- normalizeBetweenArrays(norm_data, method = "scale")
+quantile_norm <- normalizeBetweenArrays(norm_data, method = "quantile")
+loess_norm_fast <- normalizeBetweenArrays(norm_data, method = "cyclicloess", cyclic.method = "fast")
+loess_norm_pairs <- normalizeBetweenArrays(norm_data, method = "cyclicloess", cyclic.method = "pairs")
+
+#normalization control
+#boxplots
+boxplot(norm_data)
+boxplot(median_norm)
+boxplot(quantile_norm)
+boxplot(loess_norm_fast)
+boxplot(loess_norm_pairs)
+
+#MA plots
+getwd()
+source("./MA_Plots.R")
+#commented out, takes long
+MAPlots(norm_data, log = TRUE, file = "../results/MAplot_not_normed.pdf")
+MAPlots(median_norm, log = FALSE, file = "../results/MAplot_median.pdf")
+MAPlots(quantile_norm, log = FALSE, file = "../results/MAplot_quantile.pdf")
+MAPlots(loess_norm_fast, log = FALSE, file = "../results/MAplot_LOESS_fast.pdf")
+MAPlots(loess_norm_pairs, log = FALSE, file = "../results/MAplot_LOESS_pairs.pdf")
+
+#The best normalization method for the dataset according to the plots is quantile
+
+##hierarchical clustering using quantile norm.
+quantile_norm
+
+#distance measures
+#dist row wise
+dist_eu <- dist(t(quantile_norm), method = "euclidean")
+dist_man <- dist(t(quantile_norm), method = "manhattan")
+#as.dist: col wise
+dist_cor <- as.dist((1-cor(quantile_norm, use = 'pairwise.complete.obs'))/2)
+#plotting
+
+euc_av <- hclust(dist_eu, method = "average")
+euc_comp <- hclust(dist_eu, method = "complete")
+euc_sin <- hclust(dist_eu, method = "single")
+
+man_av <- hclust(dist_man, method = "average")
+man_comp <- hclust(dist_man, method = "complete")
+man_sin <- hclust(dist_man, method = "single")
+
+cor_av <- hclust(dist_cor, method = "average")
+cor_comp <- hclust(dist_cor, method = "complete")
+cor_sin <- hclust(dist_cor, method = "single")
+
+plot(euc_av)
+plot(euc_comp)
+plot(euc_sin)
+
+plot(man_av)
+plot(man_comp)
+plot(man_sin)
+
+plot(cor_av)
+plot(cor_comp)
+plot(cor_sin)
+#linkage methods affect plot more than the used distance
+
+#heatmap
+library("gplots")
+rownames(quantile_norm) <- hcc_19vs19_info$Accession
+quantile_withoutNA <- na.omit(quantile_norm)
+heatmap.2(quantile_withoutNA, trace = "none", scale = "row", Rowv = TRUE, Colv = TRUE, key = TRUE)
+
+#PCA
+#rows: observations, columns: variables
+pca <- prcomp(t(quantile_withoutNA), scale. = TRUE)
+#biplot not suitable due to too many variables
+biplot(pca)
+summ <- summary(pca)
+
+plot(pca$x[, 1], pca$x[, 2], main = "PCA", col = rep(c("blue", "red"), each = 19), pch = 20,
+     xlab = paste0("PC1: (", round(100*summ$importance[2,1], 1), ")%"),
+     ylab = paste0("PC2: (", round(100*summ$importance[2,2], 1), ")%") 
+     ) 
+legend("topright", col = c('blue', 'red'), legend = c("C", "HCC"), pch = 16)
+
+#ROC curves for
+library("pROC")
+# ATP-dependent RNA helicase (DDX39) (O00148)
+prot1 <- quantile_norm["O00148", ]
+prot1_ROC <- roc(controls = prot1[1:19], cases = prot1[20:38])
+plot(prot1_ROC, print.thres = "best", print.auc = TRUE)
+# Fibulin-5 (FBLN5) (Q9UBX5)
+prot2 <- quantile_norm["Q9UBX5", ]
+prot2_ROC <- roc(controls = prot2[1:19], cases = prot2[20:38])
+plot(prot2_ROC, print.thres = "best", print.auc = TRUE)
+# Myristoylated alanine-rich C-kinase substrate (MARCKS) (P29966)
+prot3 <- quantile_norm["P29966", ]
+prot3_ROC <- roc(controls = prot3[1:19], cases = prot3[20:38])
+plot(prot3_ROC, print.thres = "best", print.auc = TRUE)
+# Serpin H1 (SERPINH1) (P50454)
+prot4 <- quantile_norm["P50454", ]
+prot4_ROC <- roc(controls = prot4[1:19], cases = prot4[20:38])
+plot(prot4_ROC, print.thres = "best", print.auc = TRUE)
+
+#Functions
+temp_conv_FtoC <- function(temp_in_F = NULL){
+  temp_in_C <- ((temp_in_F - 32) * 5) / 9
+  return(temp_in_C)
+}
+#body temp
+temp_conv_FtoC(98.6)
+
+#function for ROC plots
+#plots a roc curve for a protein accession and returns the roc object
+#Input: normalized dataset, protein accession, number of samples (control and cases) are equal
+#threshold and auc display in the roc plot is optional and on by default
+plot_own_ROC <- function(norm_data = NULL, accession = NULL, num_group = NULL, threshold = "best", auc = TRUE){
+  library("pROC")
+  if(!is.element(accession, rownames(norm_data))){
+    stop("Accesion is not in the file,")
+  }
+  row = norm_data[accession, ]
+  print(row)
+  roc <- roc(controls = row[1:num_group], cases = row[num_group+1:(2*num_group)])
+  plot(roc, print.thres = threshold, print.auc = auc)
+  return(roc)
+}
+#function test with quantile normalized data and the "O00148" as accesion
+res <- plot_own_ROC(norm_data = quantile_norm, accession = "O00148", num_group = 19)
+```
+```{r}
+#Volcano plot
+dat1<-read.table("./r_workshop_final_data1.txt", header = TRUE)
+
+dat1<-as.matrix(dat1)
+colnames(dat1)<-substr(colnames(dat1), 1, 1)
+
+p <- rep(0, nrow(dat1))
+fc <-rep(0, nrow(dat1))
+
+for (i in 1:nrow(dat1)){
+  #row p value
+  test <- t.test( log2(dat1[i, which(colnames(dat1)=="C")]), log2(dat1[i, which(colnames(dat1)=="D")]), var.equal = TRUE )
+  p[i] <- test$p.value
+  #row fold change / ratio of means
+  mean_C <- mean(dat1[i, which(colnames(dat1)=="C")])
+  mean_D <- mean(dat1[i, which(colnames(dat1)=="D")])
+  fc[i] <- mean_C/mean_D 
+}
+p
+fdr_p <- p.adjust(p, method = "fdr")
+fc
+
+##########################################################################################
+#Volcano plot
+pvals_Vulc <- -log10(p)
+meanRats_Vulc <- log(fc, 2)
+points_to_plot <- cbind(meanRats_Vulc, pvals_Vulc)
+
+par(bg="cornflowerblue")
+plot(points_to_plot, main = "Volcano plot", xlab = "log2 Ratio of means", ylab = "-log10 p-Value", pch = 19, col = "grey")
+
+#cutoff lines
+abline(h = -log10(0.05), v = log2(c(1/2, 2)), col = "grey30", lty = 2)
+
+#significant proteins
+cutoff_p <- (p < 0.05)
+cutoff_fc <- (fc < 1/2 | fc > 2)
+points_of_interest <- (cutoff_p & cutoff_fc)
+points(points_to_plot[points_of_interest, ], col = "black", pch = 19)
+
+#proteins with a p-value under 0.05 after fdr correction
+best_proteins <- which(fdr_p < 0.05)
+points(points_to_plot[best_proteins, ], col = "dark orange", pch = 19)
+
+#differential analysis table
+tab <- cbind(dat1, p_val = p, fdr_corrected_p = fdr_p, mean_ratio = fc)
+write.table(tab, file = "../results/dat1_differential_expression", row.names = FALSE, col.names = TRUE, sep = "\t")
+
+#grid arrangement
+par(bg="white")
+par(mfrow = c(2, 3))
+#Plot of some differentialy expressed proteins with a good p-value
+for (i in 1:6){
+  plot(log2(as.numeric(dat1[best_proteins[i], ])), 
+       col = rep(c("red", "black"), each=5), 
+       pch = 19, ylab = "Abudance", xlab = "Samples", xlim = c(0, 13),
+       main = paste0("adjusted p-val = ", format(round(fdr_p[best_proteins[i]], 5), scientific = FALSE)))
+  #plot legend
+  legend("bottomright", legend = c("C", "D"), col = c("red", "black"), pch = 19)
+}
+```
+
+```{r}
+
+```
+
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
