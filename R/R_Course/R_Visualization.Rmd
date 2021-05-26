@@ -1,0 +1,701 @@
+---
+title: "R Visualization"
+output: html_notebook
+---
+
+This is an [R Markdown](http://rmarkdown.rstudio.com) Notebook. When you execute code within the notebook, the results appear beneath the code. 
+
+Try executing this chunk by clicking the *Run* button within the chunk or by placing your cursor inside it and pressing *Ctrl+Shift+Enter*. 
+
+```{r 1}
+library(ggplot2)
+
+iris_pl <- ggplot(data = iris, aes(x = Sepal.Length,
+                              y = Sepal.Width,
+                              colour = Species)) +
+  geom_point(size = 3) +
+  theme_bw()
+iris_pl
+#######################################################################################################################################
+#color ordered differently
+vir_set_ver_ordered_Species <- factor(iris$Species, c("virginica", "setosa", "versicolor"))
+iris_pl_difcol <- ggplot(data = iris, aes(x = Sepal.Length,
+                              y = Sepal.Width,
+                              colour = vir_set_ver_ordered_Species)) +
+  geom_point(size = 3) +
+  theme_bw()
+iris_pl_difcol
+#######################################################################################################################################
+library(gapminder)
+library(dplyr)
+library(forcats)
+
+#renamed factors
+gap_refact <- gapminder %>% 
+  mutate(continent = fct_recode(continent, "South- and North-America"  = "Americas", "Oceania and Australia" = "Oceania")) 
+  
+gap_renfac <- ggplot(data = gap_refact, aes(x = lifeExp, 
+                             y = log10(gdpPercap),
+                             colour = continent)) +
+  geom_point(size = 3) +
+  theme_bw()
+gap_renfac
+#######################################################################################################################################
+#Adding Antarctica as a factor
+gap_refact$continent <- factor(gap_refact$continent, c(levels(gap_refact$continent), "Antarctica"))
+levels(gap_refact$continent)
+
+gap_Antadd <- ggplot(data = gap_refact, aes(x = lifeExp,
+                                     y = log10(gdpPercap),
+                                     colour = continent)) +
+  scale_fill_manual(labels = levels(gap_refact$continent), drop = FALSE) +
+  geom_point(size = 3) +
+  scale_colour_discrete(drop=FALSE) + 
+  theme_bw()
+gap_Antadd
+#######################################################################################################################################
+#data preprocessing
+library("openxlsx")
+getwd()
+dat <- read.xlsx("./data/HCC_19vs19.xlsx")
+dat[dat == 0] <- NA
+dat
+#filters out proteins with less than 2 unique peptides using margrittr 
+#(not pronounced with a sophisticated french accent, 
+#since I do not know any french people I could ask) operator %>%
+dat2 <- dat %>% filter(Unique.peptides >= 2) %>% 
+  #adds an additional column
+  mutate(minuslog10p = -log10(Anova.p), .before = Description) %>%
+  #adds an additional column
+  mutate(log2MaxFoldChange = log2(Max.fold.change), .before = Description) %>% 
+  #adds an additional column with values depending on a condition
+  mutate(log2FC = case_when(Highest.mean.condition == "Control" ~ -log2MaxFoldChange,
+                            Highest.mean.condition == "HCC" ~ log2MaxFoldChange), .before = Description) %>% 
+  #add distance row to the origin of the volcano plot for every protein
+  mutate(Eucl_Dist = sqrt(minuslog10p^2 + log2FC^2), .before = Description) %>% 
+  mutate(adj.p = p.adjust(Anova.p, method = "fdr"), .before = Description) %>% 
+  mutate(DE_pval_fc = case_when(adj.p <= 0.005 & Max.fold.change >= 2 ~ "+",
+                                TRUE ~ "-"), .before = Description) %>% 
+  mutate(Regulation = case_when(log2FC > 0 & DE_pval_fc == "+" ~ "UP",
+                                log2FC <= 0 & DE_pval_fc == "+" ~ "DOWN",
+                                TRUE ~ "Not significant"), .before = Description)
+  
+  
+colnames(dat2)
+#write.csv(dat2, file = "./results/DATA_Hcc_volcano.csv")
+library(tidyr)
+#turns column names c_1_Hcc_19 into column entries and their entries into a column callen "Abundance"
+dat2long <- pivot_longer(dat2, cols = "C_1":"HCC_19", values_to = "Abundance")
+#adds a new column
+dat2long <- dat2long %>%  mutate(log2Abundance = log2(Abundance))
+#separates name in group and sample.nr
+dat2long <- dat2long %>% separate(name, sep = "_", c("group", "sample.nr"), remove = FALSE)
+#convert sample.nr to numeric
+dat2long$sample.nr <- as.numeric(dat2long$sample.nr)
+dat2long
+colnames(dat2long)
+str(dat2long)
+#write.csv(dat2long, file = "./results/DATA_HCC_long.csv")
+HCC_dat_boxpl <- ggplot(data = dat2long, aes(x = name, y = log2Abundance, colour = group)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+HCC_dat_boxpl
+#######################################################################################################################################
+clin <- read.xlsx("./data/clinical_data.xlsx")
+clin
+colnames(clin)
+#concatenates HCC data with patient data and drops patient column (the first -> -1) from clin table
+#x[(rowmatch), col]
+dat_with_clin <- cbind(dat2long, clin[match(dat2long$sample.nr, clin$Patient_Number), -1])
+colnames(dat_with_clin)
+#boxplot using Age as column colour
+HCC_dat_boxpl2 <- ggplot(data = dat_with_clin, aes(x = name, y = log2Abundance, colour = Age)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1))
+HCC_dat_boxpl2
+```
+```{r 2}
+library(ggplot2)
+library(dplyr)
+library(forcats)
+library(viridis)
+
+ggplot(data = iris, aes(x = Sepal.Length, y = Petal.Length, colour = Species)) +
+  geom_point() +
+  theme_bw() +
+  geom_smooth()
+
+library(gapminder)
+pl3 <- ggplot(data = gapminder, aes(x = gdpPercap, y = lifeExp, colour = continent, size = pop)) +
+  geom_point(alpha = 0.5) +
+  theme_gray() +
+  scale_x_continuous(trans = "log10") +
+  annotation_logticks(sides = "b")
+  
+pl3
+?ggplot()
+colnames(gapminder)
+gapminder
+gapminder_2007 <- filter(gapminder, year == 2007)
+#
+africaAsiaHighestGdpPc <- filter(gapminder_2007, (gdpPercap > 30000 & continent == "Asia" | (gdpPercap > 10000 & continent == "Africa")))
+colnames(africaAsiaHighestGdpPc)
+#bubble plot with country annotation of highest gdp from Asia and Africa
+pl4 <- ggplot(data = gapminder_2007, aes(x = gdpPercap, y = lifeExp, colour = continent, size = pop)) +
+  geom_point(alpha = 0.5) +
+  geom_text(data = africaAsiaHighestGdpPc, aes(label = country), show.legend = FALSE, size = 2.6, vjust = -0.5, nudge_x = 0.015, hjust = +0.1) +
+  scale_x_continuous(trans = "log10") +
+  annotation_logticks(sides = "b")
+pl4
+#barplots
+head(iris)
+pl5 <- ggplot(data = iris, aes(x = Sepal.Length, fill = Species)) +
+  theme_bw() + 
+  geom_bar()
+pl5
+
+#values replicated for entry in group
+iris_mod <- iris %>% group_by(Species) %>% mutate(mean.sl = mean(Sepal.Length), sd.sl = sd(Sepal.Length))
+#1 row per group
+iris_mod2 <- iris %>% group_by(Species) %>% summarise(mean.sl = mean(Sepal.Length), sd.sl = sd(Sepal.Length))
+
+iris_mod
+iris_mod2
+
+iris_Spec_whisker <- ggplot(data = iris_mod2, aes(x = Species, y = mean.sl, fill = Species)) +
+  theme_bw() + 
+  #stat = identity to use y axis assignment
+  geom_bar(stat = "identity", colour = "black") +
+  geom_errorbar(aes(ymin = mean.sl - sd.sl, ymax = mean.sl + sd.sl))
+iris_Spec_whisker
+
+#Histogramm
+iris_SepLen_count <- ggplot(iris, aes(x = Sepal.Length, fill = Species)) +
+  geom_histogram(bins = 9)
+iris_SepLen_count
+
+#histogramm with Frequency polygons and bins through a supplied number
+freq_pol_num <- ggplot(iris, aes(x = Sepal.Length, fill = Species, colour = Species)) +
+  geom_freqpoly(bins = 15)
+freq_pol_num
+
+#histogramm with Frequency polygons and automatic bin number through a supplied width
+freq_pol_width <- ggplot(iris, aes(x = Sepal.Length, fill = Species, colour = Species)) +
+  geom_freqpoly(binwidth = 0.5)
+freq_pol_width
+
+#Distribution density plot
+disden_pl <- ggplot(iris, aes(x = Sepal.Length, fill = Species, colour = Species)) +
+  geom_density(alpha = 0.5, adjust = 1/2)
+disden_pl
+
+#Distribution density with facets
+#transform iris to the long form
+iris_long <- iris %>% pivot_longer(cols = 1:4, names_to = "sepal_petal_dimension", values_to = "magnitude")
+iris_long
+disden_fac_pl <- ggplot(iris_long, aes(x = magnitude, fill = Species, colour = Species)) +
+  geom_density(alpha = 0.5, adjust = 1/2) +
+  facet_wrap(~ sepal_petal_dimension, scale = "free")
+disden_fac_pl
+
+#Box plot
+iris_box <- ggplot(data = iris, aes(x = Species, y = Sepal.Length, colour = Species)) +
+  geom_boxplot()
+iris_box
+
+#Violin plot with boxplot inside and point clouds
+iris_vio <- ggplot(data = iris, aes(x = Species, y = Sepal.Length, colour = Species)) +
+  geom_violin(draw_quantiles = c(0.25, 0.5, 0.75), scale = "count") +
+  geom_boxplot(width = 0.2, colour = "black") +
+  geom_jitter(alpha = 0.5)
+iris_vio
+
+#Venn Diagram
+#example dataset for the Venn diagram
+library(ggVennDiagram)
+genes <- paste("gene", 1:1000, sep = " ")
+genes
+set.seed(96)
+x <- list(
+  A = sample(genes, 300),
+  B = sample(genes, 400),
+  C = sample(genes, 130),
+  D = sample(genes, 170)
+)
+
+ggVennDiagram(x, category.names = c("A", "B", "C", "D"))
+#<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+#Heatmap
+iris_heat <- iris_long %>% group_by(Species, sepal_petal_dimension) %>% mutate(mean_magnitude = mean(magnitude)) %>% mutate(sepal_petal_dimension = as_factor(sepal_petal_dimension))
+
+iris_heat
+
+iris_heatmap <- iris_heat %>% ggplot(aes(x = Species, y = sepal_petal_dimension, fill = mean_magnitude)) +
+  geom_tile() +
+  geom_label(aes(label = mean_magnitude)) +
+  scale_fill_viridis()
+
+iris_heatmap
+```
+```{r 3}
+#sudo apt-get install libcurl4-openssl-dev on Ubuntu/Linux for installation
+library(ggplot2)
+library(dplyr)
+library(forcats)
+library(viridis)
+library(tidyverse)
+library(RColorBrewer)
+library(ggpubr)
+library(ggrepel)
+library(gapminder)
+library(tidyselect)
+
+gapminder
+
+gapminder_2007 <- gapminder %>% filter(year == 2007) %>% dplyr::mutate(pop = pop/10**12)
+gapminder_2007
+
+
+gap_box <- gapminder_2007 %>% ggplot(aes(x = continent, y = gdpPercap, fill = continent)) +
+  geom_boxplot(alpha = 0.5, aes(colour = continent)) 
+
+gap_box
+
+#Color Brewer
+scales::show_col(labels = FALSE,
+                 viridis::viridis_pal(option = "E", alpha = 1) (n = 20))
+display.brewer.all()
+
+gap_boxCuscol <- gapminder_2007 %>% 
+  ggplot(aes(x = continent, y = gdpPercap, fill = continent)) +
+  geom_boxplot(alpha = 0.5, aes(colour = continent)) +
+  scale_fill_viridis(option = "E", discrete = TRUE) 
+  
+
+gap_boxCuscol
+
+#Scatterplot with viridis
+gap_scplot <- gapminder_2007 %>% 
+  ggplot(aes(x = gdpPercap, y = lifeExp, col = continent, size = pop)) +
+  #see through points
+  geom_point(alpha = 0.5) +
+  scale_color_viridis(option = "viridis", discrete = TRUE) +
+  #scale x axis 
+  scale_x_continuous(trans = "log10") +
+  #y axis modifications
+  scale_y_continuous(limits = c(35, 85), breaks = seq(35, 85, 5)) +
+  #blobsizes
+  scale_size_area(max_size = 12) 
+  
+
+gap_scplot
+
+#another iris plot with certain colours
+ir <- ggplot(data = iris, aes(x = Sepal.Length, 
+                              y = Sepal.Width, 
+                              colour = Species, 
+                              fill = Species)) +
+  geom_point(data = iris %>% filter(Species == "setosa"), 
+             pch = 21, position = "jitter", colour = "black", size = 7) +
+  geom_point(data = iris %>% filter(Species != "setosa"), 
+             pch = 21, position = "jitter", colour = "black", size = 5) +
+  scale_fill_manual(values = c("green", "yellow", "blue"))
+ir
+
+#selected plot part with filtering and using coordinate limits
+#filter
+gapminder_2007_fil <- gapminder_2007 %>% 
+  filter(lifeExp >= 75, gdpPercap >= 35000)
+
+fil_pl <- gapminder_2007_fil %>% ggplot(
+  aes(x = gdpPercap, y = lifeExp, fill = continent, size = pop)) +
+  geom_point(shape = 21, size = 6, col = "black") +
+  scale_fill_viridis(discrete = TRUE, option = "viridis")
+fil_pl
+
+#coordinates
+coord_pl <- gapminder_2007 %>% 
+  ggplot(aes(x = gdpPercap, y = lifeExp, fill = continent, size = pop)) +
+  geom_point(shape = 21, size = 6, col = "black") +
+  scale_fill_viridis(discrete = TRUE, option = "viridis") +
+  #zooming
+  coord_cartesian(xlim = c(35000, NA), ylim = c(75, NA))
+coord_pl
+
+#labeling
+fil_pl + 
+  geom_text(aes(label = country), nudge_y = .25, size = 3)
+#labeling selected points and axes
+gap_lab <- gapminder_2007 %>% ggplot(aes(x = gdpPercap, y = lifeExp, col = continent, size = pop)) +
+  geom_point(alpha = 0.7) +
+  viridis::scale_colour_viridis(option = "viridis", discrete = TRUE) +
+  scale_x_continuous(trans = "log10") +
+  #Annotates selected country and adds an arrow pointing to it
+  geom_text_repel(data = gapminder_2007 %>% filter(country == "Norway"), 
+                  point.padding = 0.4, 
+                  aes(label = country),
+                  size = 4,
+                  col = "black",
+                  arrow = arrow(length = unit(2, "mm"), type = "closed"), type = "arrow", nudge_x = 3, nudge_y = -4) +
+  #labels for the axes and title
+  labs(title = "Population size on continents in relation to income and age",
+       subtitle = "\\(=^.^=)/",
+       x = "gdp per Capita",
+       y = "Life expectation", tag = "\\(=°~°=)>--[meow]")
+gap_lab
+
+#highlighting of individual datapoints
+redVsBlue <- gapminder_2007 %>% ggplot(aes(x = gdpPercap, y = lifeExp, size = pop)) +
+  viridis::scale_color_viridis(discrete = TRUE, option = "viridis") +
+  scale_x_continuous(trans = "log10") +
+  geom_point(data = gapminder_2007, col = "lightblue", alpha = 0.7, show.legend = FALSE) +
+  geom_point(data = gapminder_2007 %>% filter(country == "Norway"), col = "red", show.legend = FALSE) +
+  geom_text_repel(data = gapminder_2007 %>% filter(country == "Norway"), aes(label = country), color = "black",
+                  arrow = arrow(type = "closed", length = unit(2, "mm")), size = 3, nudge_x = 1, nudge_y = 4)
+redVsBlue
+
+#facet wrap
+gapminder_1967_2007 <- gapminder %>% 
+  filter(year %in% c(1967, 1987, 1997, 2007)) %>% 
+  mutate(pop = pop/10**6)
+
+facet_4x10y <- gapminder_1967_2007 %>% 
+  ggplot(aes(x = gdpPercap, y = lifeExp, col = continent, size = pop)) +
+  geom_point(alpha = 0.7) +
+  scale_x_continuous(trans = "log10") +
+  viridis::scale_color_viridis(option = "viridis", discrete = TRUE) +
+  scale_size_area(max_size = 4) +
+  facet_wrap( year ~ continent, nrow = 4, ncol = 5)
+
+facet_4x10y
+
+#facet grid
+grid_4x10y <- gapminder_1967_2007 %>% 
+  ggplot(aes(x = gdpPercap, y = lifeExp, col = continent, size = pop)) +
+  viridis::scale_color_viridis(option = "viridis", discrete = TRUE) +
+  geom_point(alpha = 0.7) +
+  scale_x_continuous(trans = "log10") +
+  scale_size_area(max_size = 7) +
+  facet_grid(rows = vars(continent), cols = vars(year))
+
+grid_4x10y
+
+###########################################################################################################################
+
+#gapminder 2017 Top10_pop
+top10pop <- gapminder %>% 
+  filter(year == 2007) %>% 
+  mutate(pop = pop/10**6) %>% 
+  top_n(n = 10, wt = pop)
+
+top10pop
+#labels for the plot
+top10labs = labs(title = "Population", subtitle = "Top 10 in 2007", x = "Popultion  (Millions)", y = "Country")
+#colors
+colors_continent <- c("#440154FF", "#3B528BFF", "#21908CFF", "#5DC863FF", "#FDE725FF")
+
+#plot
+top10pop_plot <- top10pop %>% mutate(country = fct_reorder(.f = country, .x = pop)) %>% 
+  ggplot(aes(x = pop, y = country, fill = continent)) +
+  geom_col(col = "black") + 
+  scale_fill_manual(name = "Continents",
+                    values = colors_continent,
+                    labels = c("Asia", "Europe", "Africa", "Americas", "Oceania"),
+                    limits = c("Asia", "Europe", "Africa", "Americas", "Oceania"),
+                    breaks = c("Asia", "Europe", "Africa", "Americas", "Oceania")) +
+  top10labs
+
+top10pop_plot
+
+#<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
+#relative change in population over time
+change_pop_data <- gapminder %>% 
+  mutate(pop = pop/10**6) %>% group_by(country) %>% 
+  mutate(rel_pop_growth = (pop / first(pop)) *100) %>% 
+  ungroup()
+
+change_pop_data
+
+#list of top10 countries for population
+top10pop_countries <- top10pop %>% 
+  select(country) %>%   
+  unlist() %>%   
+  unname()
+top10pop_countries
+
+#labels for the relative change in pop
+change_pop_labels <- labs(title = "Population",
+                          subtitle = paste0("Relative change of ", change_pop_data %>% 
+                            select(country) %>% 
+                            distinct() %>% 
+                            count() %>% 
+                            unlist(), "countries since 1952"),
+                          x = "Time (year)",
+                          y = "Relative change of population (%)", caption = "", tag = "")
+
+#plot
+change_pop_plot <- change_pop_data %>% 
+  ggplot(aes(x = year, y = rel_pop_growth, group = country, col = continent)) +
+  geom_line(size = 0.75, alpha = 0.7) +
+  scale_color_manual(name = "Continents",
+                     values = colors_continent,
+                     labels = c("Asia", "Europe", "Africa", "Americas", "Oceania"),
+                     limits = c("Asia", "Europe", "Africa", "Americas", "Oceania"),
+                     breaks = c("Asia", "Europe", "Africa", "Americas", "Oceania")) +
+  scale_y_continuous(limits = c(0, 1600), breaks = seq(0, 1600, 250)) +
+  scale_x_continuous(limits = c(1950, 2025)) +
+  geom_text_repel(min.segment.length = 0.1, data = . %>% 
+                    filter(year == 2007, country %in% top10pop_countries),
+                  aes(label = country), size = 2, nudge_x = 9,
+                  col = "black", show.legend = FALSE, direction = "both") +
+  facet_wrap(continent ~ .) +
+  change_pop_labels
+
+change_pop_plot
+
+###########################################################################################################################
+
+#gapminder 2017 top10_lifeExp
+top10_lExp <- gapminder_2007 %>% top_n(wt = lifeExp, n = 10)
+top10_lExp
+
+#plot for the top 10 lifeExp
+top10_lExp_labs = labs(title = "Life Expectancy", 
+                       subtitle = "Top 10 in 2007",
+                       x = "Life Expectancy",
+                       y = "Country",
+                       caption = "",
+                       tag = "")
+
+#top10_life_Exp plot
+top10lExp_plot <- top10_lExp %>% 
+  mutate(country = fct_reorder(.f = country, .x = lifeExp)) %>% 
+  ggplot(aes(x = lifeExp, y = country, fill = continent)) +
+  geom_col(color = "black", alpha = 0.8) +
+  scale_fill_manual(name = "Continents",
+                    values = colors_continent,
+                    labels = c("Asia", "Europe", "Africa", "Americas", "Oceania"),
+                    limits = c("Asia", "Europe", "Africa", "Americas", "Oceania"),
+                    breaks = c("Asia", "Europe", "Africa", "Americas", "Oceania")) +
+  coord_cartesian(xlim = c(80, 83)) + top10_lExp_labs
+
+
+top10lExp_plot
+
+#relative change in life expectancy over time
+change_lExp_data <- gapminder %>% group_by(country) %>% 
+  mutate(rel_lifeExp_growth = (lifeExp/first(lifeExp)) * 100) %>% 
+  ungroup()
+#top 10 life Exp countries 2007
+top10_lExp_countryNames <- top10_lExp %>% select(country) %>% unlist() %>% unname()
+#labels for the relative lifeExp change
+lifeExp_change_labels <- labs(title = "Life expectation change over time", subtitle = "Top10 2017 life Exp countries",
+                              x = "Time (year)", y = "Relative change of life Expectation (%)")
+
+#plot rel. change Life Exp.
+change_lExp_plot <- change_lExp_data %>% 
+  ggplot(aes(x = year, y = rel_lifeExp_growth, group = country, color = continent)) +
+  geom_line(size = 0.7, alpha = 0.7) +
+  scale_color_manual(name = "Continents", values = colors_continent, 
+                     labels = c("Asia", "Europe", "Africa", "Americas", "Oceania"), 
+                     limits = c("Asia", "Europe", "Africa", "Americas", "Oceania"), 
+                     breaks = c("Asia", "Europe", "Africa", "Americas", "Oceania")) +
+  scale_y_continuous(limits = c(50, 200), breaks = seq(50, 200, 25)) +
+  scale_x_continuous(limits = c(1950, 2020), breaks = seq(1950, 2020, 20)) +
+  facet_wrap(.~continent) + 
+  theme(text = element_text(size = 8)) +
+  ggrepel::geom_text_repel(data = . %>% filter(year == 2007, country %in% top10_lExp_countryNames), 
+                           aes(label = country), 
+                           nudge_x = 9, show.legend = FALSE,
+                           colour = "black", direction = "both", size = 3) +
+  lifeExp_change_labels
+
+change_lExp_plot  
+
+arrangement_popLife <- ggpubr::ggarrange(plotlist = list(top10pop_plot, change_pop_plot, top10lExp_plot, change_lExp_plot),
+                  common.legend = TRUE, labels = "AUTO", 
+                  nrow = 2, ncol = 2, widths = c(3/10, 7/10))
+
+arrangement_popLife
+
+#ggsave("./results/arrangement_popLife.pdf")
+
+#Theme comparison
+a = top10pop_plot + theme_bw(base_size = 10)
+b = top10pop_plot + theme_minimal(base_size = 10)
+c = top10pop_plot + theme_dark(base_size = 10)
+d = top10pop_plot + theme_classic(base_size = 10)
+
+ggpubr::ggarrange(a,b,c,d, nrow = 2, ncol = 2, labels = "AUTO", common.legend = TRUE)
+
+#top10pop_plot theme modifications
+top10pop_plot + 
+  theme(axis.text.x = element_text(angle = 45, hjust = 1), 
+        axis.text.y = element_text(colour = "blue", face = "bold"),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        axis.line.x = element_line(size = 0.5, colour = "black"),
+        axis.line.y = element_line(size = 0.5, colour = "black"))
+
+#custom theme function
+cus_th = function(){
+  theme_dark() +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1, face = "bold"), 
+        axis.text.y = element_text(colour = "blue", face = "bold"),
+        plot.title = element_text(hjust = 0.5),
+        plot.subtitle = element_text(hjust = 0.5),
+        axis.line.x = element_line(size = 0.5, colour = "black"),
+        axis.line.y = element_line(size = 0.5, colour = "black"))
+}
+
+top10pop_plot + cus_th()
+
+
+#pretty volcano plot
+library("openxlsx")
+volc <- read.xlsx("./data/DATA_HCC_volcano.xlsx")
+
+vp <- volc %>% ggplot(aes(x = log2FC, y = minuslog10p, fill = Regulation)) +
+  
+  geom_point(data = top_n(x = volc %>% filter(DE_pval_fc == "+"), n = 15, wt = Eucl_Dist) -> top_hits_ED_UwU, 
+             colour = "black", pch = 21, size = 3) +
+  geom_point(size = 3,shape = 21,alpha = 0.75, col = "NA") +
+  
+  geom_text_repel(data = top_hits_ED_UwU, aes(label = Gene),
+    colour = "black", direction = "both", size = 3, nudge_x = 0.5, nudge_y = 0.8, max.overlaps = Inf,
+    min.segment.length = 0.2, box.padding = unit(0.3, "lines"), point.padding = unit(0.3, "lines")) +
+
+  geom_vline(xintercept = log2(c(1/2, 2)), linetype = "dashed", colour = "darkgrey") +
+  geom_vline(xintercept = 0) +
+  scale_x_continuous(limits = c(-6, 6), breaks = seq(-6, 6, 2)) +
+  scale_y_continuous(limits = c(0, 10), breaks = seq(0, 10, 1)) +
+  
+  theme(axis.text.x = element_text(face = "bold"),
+        axis.line.x = element_line(size = .5, colour = "black"),
+        axis.text.y = element_text(face = "bold"),
+        axis.line.y = element_line(size = .5, colour = "black"),
+        plot.title = element_text(hjust = .5),
+        plot.subtitle = element_text(hjust = .5),
+        legend.position = "bottom") +
+  
+  labs(title = "Volcano plot", subtitle = paste0("HCC vs. Control group from ", volc %>% count(), " Proteins"), 
+       x = substitute(paste(log[2], " fold−change (HCC / Control)")), y = substitute(paste("-",log[10], " p-value"))) +
+  scale_fill_manual(values = c("orange", "grey", "blue"),
+                    labels = c("Down", "Not significant", "Up"),
+                    breaks = c("Down", "Not significant", "Up"))
+vp
+
+# summary table for the volcano plot Differentially expressed Genes
+volc_tableData <- volc %>% 
+  select(Accession, Description, Gene, minuslog10p, Anova.p, adj.p, log2FC, Eucl_Dist, DE_pval_fc, Regulation) %>% 
+  mutate(DE_pval = if_else(adj.p <= 0.05, "+", "-"),
+         DE_fc = if_else(abs(log2FC) > log2(2), "+", "-"),
+         DE_pval_fc = if_else(DE_pval == "+" & DE_fc == "+", "+", "-")) %>% 
+  mutate(Regulation = case_when(DE_pval_fc == "+" & log2FC < 0 ~ "Down",
+                                DE_pval_fc == "+" & log2FC >= 0 ~ "Up",
+                                DE_pval_fc == "-" ~ "Not significant"))
+
+DE_sum <- volc_tableData %>% summarise(Total = n(),
+                                        "Sign. adj. p value" = sum(DE_pval == "+"),
+                                        "Sign. fold change (FC)" = sum(DE_fc == "+"),
+                                        "Sign. adj. p value & fold change (FC)" = sum(DE_pval_fc == "+"),
+                                        "Down regulated" = sum(Regulation == "Down"),
+                                        "Up regulated" = sum(Regulation == "Up")) %>% 
+  
+  pivot_longer(cols = 1:6, names_to = "Category", values_to = "Counts (Proteins)") %>% 
+  mutate("Fraction [%]" = round(
+    (`Counts (Proteins)` / .$`Counts (Proteins)`[Category == "Total"]) * 100, 1))
+
+DE_sum
+
+# Table creation
+DE_sum_tab = DE_sum %>% ggpubr::ggtexttable(theme = ggpubr::ttheme(base_size = 15))
+# Table Annotation
+DE_annTab = ggpubr::annotate_figure(p = DE_sum_tab, 
+                                    top = ggpubr::text_grob(paste0("Data summary") , face = "bold", size = 15))
+DE_annTab
+#merge Plot and summary
+comp <- ggpubr::ggarrange(vp, DE_annTab, nrow = 2, align = "h", heights = c(6/10, 4/10))
+comp
+
+#ggsave(".results/comp", device = "pdf")
+
+###################################################################################################################
+
+#Heatmap ggplot
+# tabledata
+heat_tableData <- volc %>% 
+  mutate(DE_pval = if_else(adj.p <= 0.05, "+", "-"),
+         DE_fc = if_else(abs(log2FC) > log2(2), "+", "-"),
+         DE_pval_fc = if_else(DE_pval == "+" & DE_fc == "+", "+", "-")) %>% 
+  mutate(Regulation = case_when(DE_pval_fc == "+" & log2FC < 0 ~ "Down",
+                                DE_pval_fc == "+" & log2FC >= 0 ~ "Up",
+                                DE_pval_fc == "-" ~ "Not significant"))
+# top 15 hits acc Eucl Dist 
+heat_top <- top_n(x = heat_tableData %>% filter(DE_pval_fc == "+"), n = 15, wt = Eucl_Dist)
+
+# plot data
+heat_plDat <- heat_tableData %>% 
+  select(Accession, Gene, log2FC, tidyselect::contains("C_")) %>% 
+  pivot_longer(cols = tidyselect::contains("C_"), names_to = "Patient", values_to = "Intensity") %>% 
+  mutate(Intensity_log = log2(Intensity)) %>% 
+  group_by(Gene) %>% 
+  mutate(scaled_int = scale(Intensity_log)) %>% 
+  ungroup()
+  
+# labels heat
+heat_labels <- labs(title = "Heatmap", 
+                    subtitle = paste0("HCC vs. Control group: Top ", heat_top %>% count(), " Proteins"),
+                    x = "Patients", y = "Accessions")
+# theme
+heat_th <- theme_minimal(base_size = 12) +
+  theme(axis.text.x = element_text(face = "bold", angle = 90, size = 7),
+        axis.text.y = element_text(face = "bold", size = 7),
+        plot.title = element_text(hjust = .5),
+        plot.subtitle = element_text(hjust = .5)) 
+
+# plot
+heat_pl <- heat_plDat %>% 
+  filter(Gene %in% heat_top$Gene) %>%
+  mutate(Gene = fct_reorder(.x=log2FC, .f=Gene)) %>% 
+  ggplot(aes(x = Patient, y = Gene, fill = scaled_int)) +
+  geom_tile() +
+  heat_th +
+  viridis::scale_fill_viridis(option = "viridis", name = substitute(paste("Intensity(",log[2], " scaled)"))) +
+  heat_labels
+
+# description table
+heat_tab <- heat_tableData %>% 
+  mutate(Description = stringr::str_split_fixed(Description, "OS", n=2)[, 1]) %>% 
+  filter(Gene %in% heat_top$Gene) %>% 
+  arrange(desc(heat_top$log2FC)) %>% 
+  select(Accession, Gene, Description) %>%
+  ggpubr::ggtexttable(theme = ggpubr::ttheme(base_size = 10))
+heat_tab
+
+heat_ar <- ggpubr::ggarrange(heat_pl, heat_tab, nrow = 2, ncol = 1, common.legend = FALSE, heights = c(6/10, 4/10))
+heat_ar
+```
+
+
+
+
+
+```{r}
+a <- gapminder %>% group_by(country) %>% select(pop) %>% filter(pop == first(pop)|pop == last(pop)) %>% mutate(inc = (last(pop)/first(pop) )*100) %>% arrange(desc(inc)) %>% distinct(country, .keep_all = TRUE)
+a
+b <- a %>% mutate(country = fct_reorder(.f = country, .x = inc))
+b
+pop_inc <- b  %>% ggplot(aes(x=country, y=inc)) +
+  geom_col(col = "black") +
+  theme(axis.text.x=element_text(angle = 90, size = 6) )
+pop_inc
+```
+
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Ctrl+Alt+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Ctrl+Shift+K* to preview the HTML file).
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
